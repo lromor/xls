@@ -191,6 +191,8 @@ bool IntegrationFunction::IsMappingTarget(const Node* node) const {
 }
 
 absl::StatusOr<Node*> IntegrationFunction::InsertNode(const Node* to_insert) {
+  // TODO(jbaileyhandle): Implement this by calling MergeNodes behind
+  // the scenes.
   XLS_RET_CHECK(!IntegrationFunctionOwnsNode(to_insert));
   XLS_RET_CHECK(!HasMapping(to_insert));
   XLS_ASSIGN_OR_RETURN(std::vector<Node*> mapped_operands,
