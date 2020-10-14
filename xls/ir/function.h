@@ -61,7 +61,7 @@ class Function : public FunctionBase {
 
   // DumpIr emits the IR in a parsable, hierarchical text format.
   // Parameter:
-  //   'recursive' if true, will dump counted-for body functions as well.
+  //   'recursive' if true, will dump all functions invoked by this function.
   //   This is only useful when dumping individual functions, and not packages.
   std::string DumpIr(bool recursive = false) const override;
 

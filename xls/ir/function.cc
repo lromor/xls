@@ -64,13 +64,13 @@ std::string Function::DumpIr(bool recursive) const {
       continue;  // Already accounted for in the signature.
     }
     if (recursive && (node->op() == Op::kCountedFor)) {
-      nested_funcs += node->As<CountedFor>()->body()->DumpIr() + "\n";
+      nested_funcs += node->As<CountedFor>()->body()->DumpIr(recursive) + "\n";
     }
     if (recursive && (node->op() == Op::kMap)) {
-      nested_funcs += node->As<Map>()->to_apply()->DumpIr() + "\n";
+      nested_funcs += node->As<Map>()->to_apply()->DumpIr(recursive) + "\n";
     }
     if (recursive && (node->op() == Op::kInvoke)) {
-      nested_funcs += node->As<Invoke>()->to_apply()->DumpIr() + "\n";
+      nested_funcs += node->As<Invoke>()->to_apply()->DumpIr(recursive) + "\n";
     }
     StrAppend(&res, "  ", node == return_value() ? "ret " : "",
               node->ToString(), "\n");
