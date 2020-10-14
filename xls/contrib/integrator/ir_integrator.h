@@ -105,7 +105,7 @@ class IntegrationFunction {
 // Class used to integrate separate functions into a combined, reprogrammable
 // circuit that can be configured to have the same functionality as the
 // input functions. The builder will attempt to construct the integrated
-// function such that hardware common to the input functions is consolidated.
+// funciton such that hardware common to the input functions is consolidated.
 // Note that this is distinct from function inlining. With inlining, a function
 // call is replaced by the body of the function that is called.  With function
 // integration, we take separate functions that do not call each other and
