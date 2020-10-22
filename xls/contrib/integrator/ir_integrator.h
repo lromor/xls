@@ -89,8 +89,7 @@ class IntegrationFunction {
 
  private:
   // Track mapping of original function nodes to integrated function nodes.
-  absl::flat_hash_map<const Node*, Node*>
-      original_node_to_integrated_node_map_;
+  absl::flat_hash_map<const Node*, Node*> original_node_to_integrated_node_map_;
   absl::flat_hash_map<const Node*, absl::flat_hash_set<const Node*>>
       integrated_node_to_original_nodes_map_;
 
