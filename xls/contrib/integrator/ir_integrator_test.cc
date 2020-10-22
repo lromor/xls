@@ -1002,5 +1002,41 @@ TEST_F(IntegratorTest, DeUnifyIntegrationNodesKeepParam) {
   EXPECT_TRUE(integration_contains(sel));
 }
 
+TEST_F(IntegratorTest, UnifyNodeOperands) {
+  auto p = CreatePackage();
+  FunctionBuilder fb("func", p.get());
+  auto a1 = fb.Param("a1", p->GetBitsType(2));
+  auto a2 = fb.Param("a2", p->GetBitsType(2));
+  fb.Add(a1, a2);
+  XLS_ASSERT_OK_AND_ASSIGN(Function * func_a, fb.Build());
+  XLS_ASSERT_OK_AND_ASSIGN(Function * func_b, func_a->Clone());
+
+
+  XLS_ASSERT_OK_AND_ASSIGN(
+      std::unique_ptr<IntegrationFunction> integration,
+      std::move(IntegrationFunction::MakeIntegrationFunctionWithParamTuples(
+          p.get(), {func_a})));
+
+  XLS_ASSERT_OK_AND_ASSIGN(Node * a1_node, func_a->GetNode("a1"));
+  XLS_ASSERT_OK_AND_ASSIGN(Node * a2_node, func_a->GetNode("a2"));
+  Node* add_node = func_a->return_value();
+
+  XLS_ASSERT_OK_AND_ASSIGN(Node * integrated_add,
+                           integration->InsertNode(add_node));
+
+  EXPECT_TRUE(integration->HasMapping(add_node));
+  XLS_ASSERT_OK_AND_ASSIGN(Node * add_node_map,
+                           integration->GetNodeMapping(add_node));
+  EXPECT_EQ(add_node_map, integrated_add);
+  EXPECT_TRUE(integration->IntegrationFunctionOwnsNode(integrated_add));
+
+  XLS_ASSERT_OK_AND_ASSIGN(Node * a1_map_target,
+                           integration->GetNodeMapping(a1_node));
+  XLS_ASSERT_OK_AND_ASSIGN(Node * a2_map_target,
+                           integration->GetNodeMapping(a2_node));
+  EXPECT_THAT(integrated_add->operands(),
+              ElementsAre(a1_map_target, a2_map_target));
+}
+
 }  // namespace
 }  // namespace xls

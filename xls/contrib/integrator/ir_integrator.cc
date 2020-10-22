@@ -182,6 +182,29 @@ absl::StatusOr<Node*> IntegrationFunction::UnifyIntegrationNodes(
   return mux;
 }
 
+absl::StatusOr<std::vector<Node*>> IntegrationFunction::UnifyNodeOperands(const Node* node_a, const Node* node_b, std::vector<int>* added_muxes) {
+  XLS_RET_CHECK_EQ(node_a->operands().size(), node_b->operands().size());
+
+  // Get mapped operands.
+  XLS_ASSIGN_OR_RETURN(std::vector<Node *> a_ops, GetIntegratedOperands(node_a));
+  XLS_ASSIGN_OR_RETURN(std::vector<Node *> b_ops, GetIntegratedOperands(node_b));
+
+  // Unify operands.
+  std::vector<Node*> unified_operands;
+  unified_operands.reserve(a_ops.size());
+  for(int64 idx=0; idx < a_ops.size(); ++idx) {
+    bool mux_added;
+    XLS_ASSIGN_OR_RETURN(Node* uni_op, UnifyIntegrationNodes(a_ops.at(idx), 
+          b_ops.at(idx), mux_added));
+    unified_operands.push_back(uni_op);
+    if(added_muxes != nullptr && mux_added) {
+      added_muxes.push_back(uni_op);
+    }
+  }
+
+  return unified_operands;
+}
+
 absl::Status IntegrationFunction::DeUnifyIntegrationNodes(Node* node) {
   XLS_RET_CHECK_EQ(node->op(), Op::kSel);
   Select* mux = node->As<Select>();
