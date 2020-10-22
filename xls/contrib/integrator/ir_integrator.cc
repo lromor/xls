@@ -203,6 +203,27 @@ absl::StatusOr<Node*> IntegrationFunction::InsertNode(const Node* to_insert) {
   return inserted;
 }
 
+absl::StatusOr<absl::variant> IntegrationFunction::MergeNodesBackend(const Node* node_a, const Node* node_b) {
+  // Identical nodes can always be merged.
+  if (node_a->IsDefinitelyEqualTo(node_b)) {
+    return true;
+  }
+
+  // TODO(jbaileyhandle): Add logic for nodes that are not identical but
+  // may still be merged e.g. different bitwidths for bitwise ops.
+  // Should consider combining any 'score how useful this merge would be'
+  // function with CanMergeNodes, since a lot of the switching logic
+  // for these cases will be the same.
+  /*
+  switch(node_a->op()) {
+    default:
+      break;
+  }
+  */
+
+  return false;
+}
+
 absl::StatusOr<Function*> IntegrationBuilder::CloneFunctionRecursive(
     const Function* function,
     absl::flat_hash_map<const Function*, Function*>* call_remapping) {

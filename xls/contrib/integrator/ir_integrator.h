@@ -47,6 +47,12 @@ class IntegrationFunction {
   // operands are automatically discovered and connected.
   absl::StatusOr<Node*> InsertNode(const Node* to_insert);
 
+  // Returns true if nodes node_a and node_b can be combined.
+  bool CanMergeNodes(const Node* node_a, const Node* node_b);
+
+  // Merge the nodes node_a and node_b into a single node in the integrated function.
+  absl::StatusOr<Node*> MergeNodes(const Node* node_a, const Node* node_b);
+
   // For the integration function nodes node_a and node_b,
   // returns a single integration function node that combines the two
   // nodes. This may involve adding a mux and parameter select signal.
@@ -139,6 +145,9 @@ class IntegrationBuilder {
       absl::flat_hash_map<const Function*, Function*>* call_remapping);
 
   NameUniquer function_name_uniquer_ = NameUniquer(/*separator=*/"__");
+
+  // Helper function that implements the logic for MergeNodes, 
+  absl::StatusOr<absl::variant> MergeNodesBackend(const Node* node_a, const Node* node_b);
 
   // Common package for to-be integrated functions
   // and integrated function.
