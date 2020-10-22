@@ -50,7 +50,8 @@ class IntegrationFunction {
   // Returns true if nodes node_a and node_b can be combined.
   bool CanMergeNodes(const Node* node_a, const Node* node_b);
 
-  // Merge the nodes node_a and node_b into a single node in the integrated function.
+  // Merge the nodes node_a and node_b into a single node in the integrated
+  // function.
   absl::StatusOr<Node*> MergeNodes(const Node* node_a, const Node* node_b);
 
   // For the integration function nodes node_a and node_b,
@@ -60,6 +61,11 @@ class IntegrationFunction {
   // set to true if this call added a new mux.  Otherwise, false.
   absl::StatusOr<Node*> UnifyIntegrationNodes(Node* node_a, Node* node_b,
                                               bool* new_mux_added = nullptr);
+
+  // For a mux produced by UnifyIntegrationNodes, remove the mux and
+  // the select paramter (if it has no other users).  Also updates
+  // internal unification / mux book-keeping.
+  absl::Status DeUnifyIntegrationNodes(Node* mux);
 
   // Declares that node 'source' from a source function maps
   // to node 'map_target' in the integrated_function.
@@ -146,8 +152,9 @@ class IntegrationBuilder {
 
   NameUniquer function_name_uniquer_ = NameUniquer(/*separator=*/"__");
 
-  // Helper function that implements the logic for MergeNodes, 
-  absl::StatusOr<absl::variant> MergeNodesBackend(const Node* node_a, const Node* node_b);
+  // Helper function that implements the logic for MergeNodes,
+  // absl::StatusOr<bool> MergeNodesBackend(const Node* node_a, const Node*
+  // node_b);
 
   // Common package for to-be integrated functions
   // and integrated function.

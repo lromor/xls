@@ -747,5 +747,260 @@ TEST_F(IntegratorTest, InsertNodeRepeatedly) {
   EXPECT_FALSE(repeat_result.ok());
 }
 
+TEST_F(IntegratorTest, DeUnifyIntegrationNodesExternalNode) {
+  auto p = CreatePackage();
+  XLS_ASSERT_OK_AND_ASSIGN(
+      std::unique_ptr<IntegrationFunction> integration,
+      std::move(IntegrationFunction::MakeIntegrationFunctionWithParamTuples(
+          p.get(), {})));
+  Function external_func("external", p.get());
+
+  XLS_ASSERT_OK_AND_ASSIGN(
+      Node * external_1,
+      external_func.MakeNodeWithName<Param>(/*loc=*/std::nullopt, "external_1",
+                                            p->GetBitsType(2)));
+  XLS_ASSERT_OK_AND_ASSIGN(
+      Node * external_2,
+      external_func.MakeNodeWithName<Param>(/*loc=*/std::nullopt, "external_2",
+                                            p->GetBitsType(2)));
+  XLS_ASSERT_OK_AND_ASSIGN(
+      Node * external_sel,
+      external_func.MakeNodeWithName<Param>(/*loc=*/std::nullopt,
+                                            "external_sel", p->GetBitsType(1)));
+  std::vector<Node*> elements = {external_1, external_2};
+  XLS_ASSERT_OK_AND_ASSIGN(
+      Node * external_mux,
+      external_func.MakeNode<Select>(/*loc=*/std::nullopt, external_sel,
+                                     elements, /*default_value=*/std::nullopt));
+
+  // Can't DeUnify external node.
+  auto result = integration->DeUnifyIntegrationNodes(external_mux);
+  EXPECT_FALSE(result.ok());
+}
+
+TEST_F(IntegratorTest, DeUnifyIntegrationNodesNonUnifyNonMux) {
+  auto p = CreatePackage();
+  XLS_ASSERT_OK_AND_ASSIGN(
+      std::unique_ptr<IntegrationFunction> integration,
+      std::move(IntegrationFunction::MakeIntegrationFunctionWithParamTuples(
+          p.get(), {})));
+  Function& internal_func = *integration->function();
+
+  XLS_ASSERT_OK_AND_ASSIGN(
+      Node * internal_1,
+      internal_func.MakeNodeWithName<Param>(/*loc=*/std::nullopt, "internal_1",
+                                            p->GetBitsType(2)));
+  XLS_ASSERT_OK_AND_ASSIGN(
+      Node * internal_cat,
+      internal_func.MakeNode<Concat>(
+          /*loc=*/std::nullopt, std::vector<Node*>({internal_1, internal_1})));
+
+  auto result = integration->DeUnifyIntegrationNodes(internal_cat);
+  EXPECT_FALSE(result.ok());
+}
+
+TEST_F(IntegratorTest, DeUnifyIntegrationNodesNonUnifyMuxDoesNotHaveTwoCases) {
+  auto p = CreatePackage();
+  XLS_ASSERT_OK_AND_ASSIGN(
+      std::unique_ptr<IntegrationFunction> integration,
+      std::move(IntegrationFunction::MakeIntegrationFunctionWithParamTuples(
+          p.get(), {})));
+  Function& internal_func = *integration->function();
+
+  XLS_ASSERT_OK_AND_ASSIGN(
+      Node * internal_1,
+      internal_func.MakeNodeWithName<Param>(/*loc=*/std::nullopt, "internal_1",
+                                            p->GetBitsType(2)));
+  XLS_ASSERT_OK_AND_ASSIGN(
+      Node * internal_sel,
+      internal_func.MakeNodeWithName<Param>(/*loc=*/std::nullopt,
+                                            "internal_sel", p->GetBitsType(1)));
+  std::vector<Node*> elements = {internal_1};
+  XLS_ASSERT_OK_AND_ASSIGN(Node * internal_mux,
+                           integration->function()->MakeNode<Select>(
+                               /*loc=*/std::nullopt, internal_sel, elements,
+                               /*default_value=*/internal_sel));
+
+  auto result = integration->DeUnifyIntegrationNodes(internal_mux);
+  EXPECT_FALSE(result.ok());
+}
+
+TEST_F(IntegratorTest, DeUnifyIntegrationNodesNonUnifyMuxSameOperands) {
+  auto p = CreatePackage();
+  XLS_ASSERT_OK_AND_ASSIGN(
+      std::unique_ptr<IntegrationFunction> integration,
+      std::move(IntegrationFunction::MakeIntegrationFunctionWithParamTuples(
+          p.get(), {})));
+  Function& internal_func = *integration->function();
+
+  XLS_ASSERT_OK_AND_ASSIGN(
+      Node * internal_1,
+      internal_func.MakeNodeWithName<Param>(/*loc=*/std::nullopt, "internal_1",
+                                            p->GetBitsType(2)));
+  XLS_ASSERT_OK_AND_ASSIGN(
+      Node * internal_2,
+      internal_func.MakeNodeWithName<Param>(/*loc=*/std::nullopt, "internal_2",
+                                            p->GetBitsType(2)));
+  XLS_ASSERT_OK_AND_ASSIGN(
+      Node * internal_sel,
+      internal_func.MakeNodeWithName<Param>(/*loc=*/std::nullopt,
+                                            "internal_sel", p->GetBitsType(1)));
+  XLS_ASSERT_OK(integration->UnifyIntegrationNodes(internal_1, internal_2));
+  std::vector<Node*> elements = {internal_1, internal_2};
+  XLS_ASSERT_OK_AND_ASSIGN(
+      Node * internal_mux,
+      internal_func.MakeNode<Select>(/*loc=*/std::nullopt, internal_sel,
+                                     elements, /*default_value=*/std::nullopt));
+
+  auto result = integration->DeUnifyIntegrationNodes(internal_mux);
+  EXPECT_FALSE(result.ok());
+}
+
+TEST_F(IntegratorTest, DeUnifyIntegrationNodesNonUnifyMuxDifferentOperands) {
+  auto p = CreatePackage();
+  XLS_ASSERT_OK_AND_ASSIGN(
+      std::unique_ptr<IntegrationFunction> integration,
+      std::move(IntegrationFunction::MakeIntegrationFunctionWithParamTuples(
+          p.get(), {})));
+  Function& internal_func = *integration->function();
+
+  XLS_ASSERT_OK_AND_ASSIGN(
+      Node * internal_1,
+      internal_func.MakeNodeWithName<Param>(/*loc=*/std::nullopt, "internal_1",
+                                            p->GetBitsType(2)));
+  XLS_ASSERT_OK_AND_ASSIGN(
+      Node * internal_2,
+      internal_func.MakeNodeWithName<Param>(/*loc=*/std::nullopt, "internal_2",
+                                            p->GetBitsType(2)));
+  XLS_ASSERT_OK_AND_ASSIGN(
+      Node * internal_3,
+      internal_func.MakeNodeWithName<Param>(/*loc=*/std::nullopt, "internal_3",
+                                            p->GetBitsType(2)));
+  XLS_ASSERT_OK_AND_ASSIGN(
+      Node * internal_4,
+      internal_func.MakeNodeWithName<Param>(/*loc=*/std::nullopt, "internal_4",
+                                            p->GetBitsType(2)));
+  XLS_ASSERT_OK_AND_ASSIGN(
+      Node * internal_sel,
+      internal_func.MakeNodeWithName<Param>(/*loc=*/std::nullopt,
+                                            "internal_sel", p->GetBitsType(1)));
+  XLS_ASSERT_OK(integration->UnifyIntegrationNodes(internal_1, internal_2));
+  std::vector<Node*> elements = {internal_3, internal_4};
+  XLS_ASSERT_OK_AND_ASSIGN(
+      Node * internal_mux,
+      internal_func.MakeNode<Select>(/*loc=*/std::nullopt, internal_sel,
+                                     elements, /*default_value=*/std::nullopt));
+
+  auto result = integration->DeUnifyIntegrationNodes(internal_mux);
+  EXPECT_FALSE(result.ok());
+}
+
+TEST_F(IntegratorTest, DeUnifyIntegrationNodesMuxHasUsers) {
+  auto p = CreatePackage();
+  XLS_ASSERT_OK_AND_ASSIGN(
+      std::unique_ptr<IntegrationFunction> integration,
+      std::move(IntegrationFunction::MakeIntegrationFunctionWithParamTuples(
+          p.get(), {})));
+  Function& internal_func = *integration->function();
+
+  XLS_ASSERT_OK_AND_ASSIGN(
+      Node * internal_1,
+      internal_func.MakeNodeWithName<Param>(/*loc=*/std::nullopt, "internal_1",
+                                            p->GetBitsType(2)));
+  XLS_ASSERT_OK_AND_ASSIGN(
+      Node * internal_2,
+      internal_func.MakeNodeWithName<Param>(/*loc=*/std::nullopt, "internal_2",
+                                            p->GetBitsType(2)));
+  XLS_ASSERT_OK_AND_ASSIGN(Node * unify_mux, integration->UnifyIntegrationNodes(
+                                                 internal_1, internal_2));
+  XLS_ASSERT_OK(internal_func.MakeNode<Concat>(
+      /*loc=*/std::nullopt, std::vector<Node*>({unify_mux, unify_mux})));
+
+  auto result = integration->DeUnifyIntegrationNodes(unify_mux);
+  EXPECT_FALSE(result.ok());
+}
+
+TEST_F(IntegratorTest, DeUnifyIntegrationNodesRemoveParam) {
+  auto p = CreatePackage();
+  XLS_ASSERT_OK_AND_ASSIGN(
+      std::unique_ptr<IntegrationFunction> integration,
+      std::move(IntegrationFunction::MakeIntegrationFunctionWithParamTuples(
+          p.get(), {})));
+  Function& internal_func = *integration->function();
+
+  XLS_ASSERT_OK_AND_ASSIGN(
+      Node * internal_1,
+      internal_func.MakeNodeWithName<Param>(/*loc=*/std::nullopt, "internal_1",
+                                            p->GetBitsType(2)));
+  XLS_ASSERT_OK_AND_ASSIGN(
+      Node * internal_2,
+      internal_func.MakeNodeWithName<Param>(/*loc=*/std::nullopt, "internal_2",
+                                            p->GetBitsType(2)));
+  XLS_ASSERT_OK_AND_ASSIGN(Node * unify_mux, integration->UnifyIntegrationNodes(
+                                                 internal_1, internal_2));
+  Node* sel = unify_mux->As<Select>()->selector();
+
+  EXPECT_EQ(integration->function()->node_count(), 4);
+  auto result = integration->DeUnifyIntegrationNodes(unify_mux);
+
+  auto integration_contains = [&integration](Node* target_node) {
+    for (Node* node : integration->function()->nodes()) {
+      if (target_node == node) {
+        return true;
+      }
+    }
+    return false;
+  };
+  EXPECT_TRUE(result.ok());
+  EXPECT_EQ(integration->function()->node_count(), 2);
+  EXPECT_FALSE(integration_contains(unify_mux));
+  EXPECT_FALSE(integration_contains(sel));
+
+  bool added_mux = false;
+  XLS_ASSERT_OK(
+      integration->UnifyIntegrationNodes(internal_1, internal_2, &added_mux));
+  EXPECT_TRUE(added_mux);
+}
+
+TEST_F(IntegratorTest, DeUnifyIntegrationNodesKeepParam) {
+  auto p = CreatePackage();
+  XLS_ASSERT_OK_AND_ASSIGN(
+      std::unique_ptr<IntegrationFunction> integration,
+      std::move(IntegrationFunction::MakeIntegrationFunctionWithParamTuples(
+          p.get(), {})));
+  Function& internal_func = *integration->function();
+
+  XLS_ASSERT_OK_AND_ASSIGN(
+      Node * internal_1,
+      internal_func.MakeNodeWithName<Param>(/*loc=*/std::nullopt, "internal_1",
+                                            p->GetBitsType(2)));
+  XLS_ASSERT_OK_AND_ASSIGN(
+      Node * internal_2,
+      internal_func.MakeNodeWithName<Param>(/*loc=*/std::nullopt, "internal_2",
+                                            p->GetBitsType(2)));
+  XLS_ASSERT_OK_AND_ASSIGN(Node * unify_mux, integration->UnifyIntegrationNodes(
+                                                 internal_1, internal_2));
+
+  Node* sel = unify_mux->As<Select>()->selector();
+  XLS_ASSERT_OK(internal_func.MakeNode<Concat>(/*loc=*/std::nullopt,
+                                               std::vector<Node*>({sel, sel})));
+
+  EXPECT_EQ(integration->function()->node_count(), 5);
+  auto result = integration->DeUnifyIntegrationNodes(unify_mux);
+
+  auto integration_contains = [&integration](Node* target_node) {
+    for (Node* node : integration->function()->nodes()) {
+      if (target_node == node) {
+        return true;
+      }
+    }
+    return false;
+  };
+  EXPECT_TRUE(result.ok());
+  EXPECT_EQ(integration->function()->node_count(), 4);
+  EXPECT_FALSE(integration_contains(unify_mux));
+  EXPECT_TRUE(integration_contains(sel));
+}
+
 }  // namespace
 }  // namespace xls

@@ -182,6 +182,31 @@ absl::StatusOr<Node*> IntegrationFunction::UnifyIntegrationNodes(
   return mux;
 }
 
+absl::Status IntegrationFunction::DeUnifyIntegrationNodes(Node* node) {
+  XLS_RET_CHECK_EQ(node->op(), Op::kSel);
+  Select* mux = node->As<Select>();
+  XLS_RET_CHECK(IntegrationFunctionOwnsNode(mux));
+  XLS_RET_CHECK_EQ(mux->cases().size(), 2);
+  Node* a_in = mux->cases().at(0);
+  Node* b_in = mux->cases().at(1);
+
+  // Clean up bookkeeping.
+  std::pair<const Node*, const Node*> key = std::make_pair(a_in, b_in);
+  XLS_RET_CHECK(node_pair_to_mux_.contains(key));
+  XLS_RET_CHECK_EQ(node_pair_to_mux_.at(key), mux);
+  node_pair_to_mux_.erase(key);
+
+  // Clean up nodes.
+  Node* selector = mux->selector();
+  XLS_RETURN_IF_ERROR(function()->RemoveNode(mux));
+  if (selector->users().empty()) {
+    XLS_RETURN_IF_ERROR(
+        function()->RemoveNode(selector, /*remove_param_ok=*/true));
+  }
+
+  return absl::OkStatus();
+}
+
 bool IntegrationFunction::HasMapping(const Node* node) const {
   return original_node_to_integrated_node_map_.contains(node);
 }
@@ -203,7 +228,9 @@ absl::StatusOr<Node*> IntegrationFunction::InsertNode(const Node* to_insert) {
   return inserted;
 }
 
-absl::StatusOr<absl::variant> IntegrationFunction::MergeNodesBackend(const Node* node_a, const Node* node_b) {
+/*
+absl::StatusOr<bool> IntegrationFunction::MergeNodesBackend(const Node* node_a,
+const Node* node_b) {
   // Identical nodes can always be merged.
   if (node_a->IsDefinitelyEqualTo(node_b)) {
     return true;
@@ -214,15 +241,14 @@ absl::StatusOr<absl::variant> IntegrationFunction::MergeNodesBackend(const Node*
   // Should consider combining any 'score how useful this merge would be'
   // function with CanMergeNodes, since a lot of the switching logic
   // for these cases will be the same.
-  /*
   switch(node_a->op()) {
     default:
       break;
   }
-  */
 
   return false;
 }
+*/
 
 absl::StatusOr<Function*> IntegrationBuilder::CloneFunctionRecursive(
     const Function* function,
