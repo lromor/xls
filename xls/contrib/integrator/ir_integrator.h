@@ -105,7 +105,20 @@ class IntegrationFunction {
     return function_.get() == node->function_base();
   }
 
+  // Returns an estimate of the (gate count? area?) cost of a node.
+  float GetNodeCost(const Node* node) const {
+    // TODO: Actual estimate.
+    return 1.0;
+  }
+
  private:
+
+  // Helper function that implements the logic for merging nodes,
+  // allowing either for the merge to be performed or the cost
+  // of the merge to be estimated.
+  absl::StatusOr<absl::optional<absl::variant<Node*, float>>> 
+    MergeNodesBackend(const Node* node_a, const Node* node_b, bool score_only);
+
   // Track mapping of original function nodes to integrated function nodes.
   absl::flat_hash_map<const Node*, Node*> original_node_to_integrated_node_map_;
   absl::flat_hash_map<const Node*, absl::flat_hash_set<const Node*>>
@@ -157,10 +170,6 @@ class IntegrationBuilder {
       absl::flat_hash_map<const Function*, Function*>* call_remapping);
 
   NameUniquer function_name_uniquer_ = NameUniquer(/*separator=*/"__");
-
-  // Helper function that implements the logic for MergeNodes,
-  // absl::StatusOr<bool> MergeNodesBackend(const Node* node_a, const Node*
-  // node_b);
 
   // Common package for to-be integrated functions
   // and integrated function.

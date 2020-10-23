@@ -253,27 +253,54 @@ absl::StatusOr<Node*> IntegrationFunction::InsertNode(const Node* to_insert) {
   return inserted;
 }
 
-/*
-absl::StatusOr<bool> IntegrationFunction::MergeNodesBackend(const Node* node_a,
-const Node* node_b) {
+absl::StatusOr<absl::optional<absl::variant<Node*, float>>> 
+  IntegrationFunction::MergeNodesBackend(const Node* node_a, const Node* node_b, bool score_only) {
+  // Simple way to avoid situation where node_a depends on node_b or
+  // vice versa. If we later want to merge nodes from the same function,
+  // we can implement reaching analysis to check for dependencies.
+  if(node_a != node_b) {
+    XLS_RET_CHECK(node_a->function() != node_b->function());
+  }
+  XLS_RET_CHECK(!IntegrationFunctionOwnsNode(node_a) || !IntegrationFunctionOwnsNode(node_b));
+
+  // Separate targets for node_a and node_b because we may derive
+  // map target nodes from the merged node (e.g. if a and b have
+  // different bitdwdiths, the merged node may take the maximum
+  // width. We then add a bitslice to map the smaller node to).
+  Node* a_target = nullptr;
+  Node* b_target = nullptr;
+  std::vector<Node*> added_muxes;
+  std::vector<Node*> other_added_nodes;
+
   // Identical nodes can always be merged.
-  if (node_a->IsDefinitelyEqualTo(node_b)) {
+  if(node_a->IsDefinitelyEqualTo(node_b)) {
+    XLS_ASSIGN_OR_RETURN(std::vector<Node*> operands, UnifyNodeOperands(node_a, node_b, &added_muxes));
+    Node* merged = node_a->CloneInNewFunction(operands, function());
+    a_target = merged;
+    b_target = merged;
+    other_added_nodes.push_back(merged);
     return true;
+  } else {
+    // TODO(jbaileyhandle): Add logic for nodes that are not identical but
+    // may still be merged e.g. different bitwidths for bitwise ops.
+    switch(node_a->op()) {
+      default:
+        return absl::nullopt;
+        break;
+    }
   }
 
-  // TODO(jbaileyhandle): Add logic for nodes that are not identical but
-  // may still be merged e.g. different bitwidths for bitwise ops.
-  // Should consider combining any 'score how useful this merge would be'
-  // function with CanMergeNodes, since a lot of the switching logic
-  // for these cases will be the same.
-  switch(node_a->op()) {
-    default:
-      break;
+  if(score_only) {
+    // Score.
+    float score = 0.0;
+    if(
+
+    // Cleanup.
+  } else {
   }
 
-  return false;
+  return absl::nullopt;
 }
-*/
 
 absl::StatusOr<Function*> IntegrationBuilder::CloneFunctionRecursive(
     const Function* function,
