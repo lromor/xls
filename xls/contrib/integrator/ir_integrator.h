@@ -64,7 +64,9 @@ class IntegrationFunction {
 
   // Return a vector nodes where each node unifies the corresponding
   // operands of 'node_a' and 'node_b'.
-  absl::StatusOr<std::vector<Node*>> UnifyNodeOperands(const Node* node_a, const Node* node_b, std::vector<int>* added_muxes = nullptr);
+  absl::StatusOr<std::vector<Node*>> UnifyNodeOperands(
+      const Node* node_a, const Node* node_b,
+      std::vector<Node*>* added_muxes = nullptr);
 
   // For a mux produced by UnifyIntegrationNodes, remove the mux and
   // the select paramter (if it has no other users).  Also updates

@@ -1005,37 +1005,66 @@ TEST_F(IntegratorTest, DeUnifyIntegrationNodesKeepParam) {
 TEST_F(IntegratorTest, UnifyNodeOperands) {
   auto p = CreatePackage();
   FunctionBuilder fb("func", p.get());
-  auto a1 = fb.Param("a1", p->GetBitsType(2));
-  auto a2 = fb.Param("a2", p->GetBitsType(2));
-  fb.Add(a1, a2);
+  auto in1 = fb.Param("in1", p->GetBitsType(2));
+  auto in2 = fb.Param("in2", p->GetBitsType(2));
+  fb.Add(in1, in2);
   XLS_ASSERT_OK_AND_ASSIGN(Function * func_a, fb.Build());
-  XLS_ASSERT_OK_AND_ASSIGN(Function * func_b, func_a->Clone());
-
+  XLS_ASSERT_OK_AND_ASSIGN(Function * func_b, func_a->Clone("clone"));
+  Node* a_in1 = FindNode("in1", func_a);
+  Node* a_in2 = FindNode("in2", func_a);
+  Node* a_add = a_in1->users().at(0);
+  Node* b_in1 = FindNode("in1", func_b);
+  Node* b_in2 = FindNode("in2", func_b);
+  Node* b_add = b_in1->users().at(0);
 
   XLS_ASSERT_OK_AND_ASSIGN(
       std::unique_ptr<IntegrationFunction> integration,
       std::move(IntegrationFunction::MakeIntegrationFunctionWithParamTuples(
-          p.get(), {func_a})));
+          p.get(), {})));
+  XLS_ASSERT_OK_AND_ASSIGN(Node * a_in1_map, integration->InsertNode(a_in1));
+  XLS_ASSERT_OK_AND_ASSIGN(Node * a_in2_map, integration->InsertNode(a_in2));
+  XLS_ASSERT_OK(integration->SetNodeMapping(b_in1, a_in1_map));
+  XLS_ASSERT_OK_AND_ASSIGN(Node * b_in2_map, integration->InsertNode(b_in2));
 
-  XLS_ASSERT_OK_AND_ASSIGN(Node * a1_node, func_a->GetNode("a1"));
-  XLS_ASSERT_OK_AND_ASSIGN(Node * a2_node, func_a->GetNode("a2"));
-  Node* add_node = func_a->return_value();
+  std::vector<Node*> added_muxes;
+  XLS_ASSERT_OK_AND_ASSIGN(
+      std::vector<Node*> unified_operands,
+      integration->UnifyNodeOperands(a_add, b_add, &added_muxes));
+  EXPECT_EQ(added_muxes.size(), 1);
+  Select* mux = added_muxes.at(0)->As<Select>();
+  EXPECT_THAT(mux->cases(), ElementsAre(a_in2_map, b_in2_map));
+  EXPECT_THAT(unified_operands, ElementsAre(a_in1_map, mux));
+}
 
-  XLS_ASSERT_OK_AND_ASSIGN(Node * integrated_add,
-                           integration->InsertNode(add_node));
+TEST_F(IntegratorTest, UnifyNodeOperandsNoAddedMuxesArg) {
+  auto p = CreatePackage();
+  FunctionBuilder fb("func", p.get());
+  auto in1 = fb.Param("in1", p->GetBitsType(2));
+  auto in2 = fb.Param("in2", p->GetBitsType(2));
+  fb.Add(in1, in2);
+  XLS_ASSERT_OK_AND_ASSIGN(Function * func_a, fb.Build());
+  XLS_ASSERT_OK_AND_ASSIGN(Function * func_b, func_a->Clone("clone"));
+  Node* a_in1 = FindNode("in1", func_a);
+  Node* a_in2 = FindNode("in2", func_a);
+  Node* a_add = a_in1->users().at(0);
+  Node* b_in1 = FindNode("in1", func_b);
+  Node* b_in2 = FindNode("in2", func_b);
+  Node* b_add = b_in1->users().at(0);
 
-  EXPECT_TRUE(integration->HasMapping(add_node));
-  XLS_ASSERT_OK_AND_ASSIGN(Node * add_node_map,
-                           integration->GetNodeMapping(add_node));
-  EXPECT_EQ(add_node_map, integrated_add);
-  EXPECT_TRUE(integration->IntegrationFunctionOwnsNode(integrated_add));
+  XLS_ASSERT_OK_AND_ASSIGN(
+      std::unique_ptr<IntegrationFunction> integration,
+      std::move(IntegrationFunction::MakeIntegrationFunctionWithParamTuples(
+          p.get(), {})));
+  XLS_ASSERT_OK_AND_ASSIGN(Node * a_in1_map, integration->InsertNode(a_in1));
+  XLS_ASSERT_OK_AND_ASSIGN(Node * a_in2_map, integration->InsertNode(a_in2));
+  XLS_ASSERT_OK(integration->SetNodeMapping(b_in1, a_in1_map));
+  XLS_ASSERT_OK(integration->InsertNode(b_in2));
 
-  XLS_ASSERT_OK_AND_ASSIGN(Node * a1_map_target,
-                           integration->GetNodeMapping(a1_node));
-  XLS_ASSERT_OK_AND_ASSIGN(Node * a2_map_target,
-                           integration->GetNodeMapping(a2_node));
-  EXPECT_THAT(integrated_add->operands(),
-              ElementsAre(a1_map_target, a2_map_target));
+  XLS_ASSERT_OK_AND_ASSIGN(std::vector<Node*> unified_operands,
+                           integration->UnifyNodeOperands(a_add, b_add));
+  EXPECT_EQ(a_in2_map->users().size(), 1);
+  Node* mux = a_in2_map->users().front();
+  EXPECT_THAT(unified_operands, ElementsAre(a_in1_map, mux));
 }
 
 }  // namespace
