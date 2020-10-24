@@ -47,12 +47,16 @@ class IntegrationFunction {
   // operands are automatically discovered and connected.
   absl::StatusOr<Node*> InsertNode(const Node* to_insert);
 
-  // Returns true if nodes node_a and node_b can be combined.
-  bool CanMergeNodes(const Node* node_a, const Node* node_b);
+  // Estimate the cost of merging node_a and node_b. If nodes cannot be
+  // merged, not value is returned.
+  absl::StatusOr<std::optional<float>> 
+    GetMergeNodesCost(const Node* node_a, const Node* node_b);
 
-  // Merge the nodes node_a and node_b into a single node in the integrated
-  // function.
-  absl::StatusOr<Node*> MergeNodes(const Node* node_a, const Node* node_b);
+  // Merge node_a and node_b. Returns the nodes that node_a and node_b
+  // map to after merging (vector contains a single node if they map
+  // to the same node).
+  absl::StatusOr<std::vector<Node*>> 
+    MergeNodes(Node* node_a, Node* node_b);
 
   // For the integration function nodes node_a and node_b,
   // returns a single integration function node that combines the two
@@ -106,18 +110,14 @@ class IntegrationFunction {
   }
 
   // Returns an estimate of the (gate count? area?) cost of a node.
-  float GetNodeCost(const Node* node) const {
-    // TODO: Actual estimate.
-    return 1.0;
-  }
+  float GetNodeCost(const Node* node) const;
 
  private:
-
   // Helper function that implements the logic for merging nodes,
   // allowing either for the merge to be performed or the cost
   // of the merge to be estimated.
-  absl::StatusOr<absl::optional<absl::variant<Node*, float>>> 
-    MergeNodesBackend(const Node* node_a, const Node* node_b, bool score_only);
+  absl::StatusOr<bool> 
+    MergeNodesBackend(const Node* node_a, const Node* node_b, std::vector<Node*>* added_muxes, absl::flat_hash_set<Node*>* other_added_nodes, Node** target_a, Node** target_b);
 
   // Track mapping of original function nodes to integrated function nodes.
   absl::flat_hash_map<const Node*, Node*> original_node_to_integrated_node_map_;
