@@ -392,6 +392,10 @@ absl::StatusOr<std::vector<Node*>>
 
   // Commit changes.
   auto commit_new_node = [this](Node* original, Node* target) {
+    auto map_status = SetNodeMapping(original, target);
+    if(!map_status.ok()) {
+      return map_status;
+    }
     if(IntegrationFunctionOwnsNode(original)) {
       absl::StatusOr<bool> ReplaceUsesWith(Node* replacement);
       auto replace_result = original->ReplaceUsesWith(target);
@@ -402,10 +406,6 @@ absl::StatusOr<std::vector<Node*>>
       if(!remove_status.ok()) {
         return remove_status;
       }
-    }
-    auto map_status = SetNodeMapping(original, target);
-    if(!map_status.ok()) {
-      return map_status;
     }
     return absl::OkStatus();
   };
