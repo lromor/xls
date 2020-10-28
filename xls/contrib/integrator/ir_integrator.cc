@@ -273,7 +273,7 @@ absl::StatusOr<bool>
   // vice versa. If we later want to merge nodes from the same function,
   // we can implement reaching analysis to check for dependencies.
   if(node_a != node_b) {
-    XLS_RET_CHECK(node_a->function() != node_b->function());
+    XLS_RET_CHECK(node_a->function_base() != node_b->function_base());
   }
 
   // Separate targets for node_a and node_b because we may derive
