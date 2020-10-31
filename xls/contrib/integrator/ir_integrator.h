@@ -21,14 +21,29 @@
 
 namespace xls {
 
+class IntegrationOptions {
+ public:
+  // Whether we can program individual muxes with unique select signals
+  // or if we can configure the entire graph to match one of the input
+  // functions using a single select signal.
+  IntegrationOptions& unique_select_signal_per_mux(bool value) {
+    unique_select_signal_per_mux_ = value;
+    return *this;
+  }
+  bool unique_select_signal_per_mux() const {
+    return unique_select_signal_per_mux_;
+  }
+
+ private:
+  bool unique_select_signal_per_mux_ = false;
+};
+
 // Class that represents an integration function i.e. a function combining the
 // IR of other functions. This class tracks which original function nodes are
 // mapped to which integration function nodes. It also provides some utilities
 // that are useful for constructing the integrated function.
 class IntegrationFunction {
  public:
-  IntegrationFunction() {}
-
   IntegrationFunction(const IntegrationFunction& other) = delete;
   void operator=(const IntegrationFunction& other) = delete;
 
@@ -39,24 +54,29 @@ class IntegrationFunction {
   static absl::StatusOr<std::unique_ptr<IntegrationFunction>>
   MakeIntegrationFunctionWithParamTuples(
       Package* package, absl::Span<const Function* const> source_functions,
+      const IntegrationOptions& options = IntegrationOptions(),
       std::string function_name = "IntegrationFunction");
 
   Function* function() const { return function_.get(); }
+  Node* global_mux_select() const { return global_mux_select_param_; }
+
+  // Estimate the cost of inserting the node 'to_insert'.
+  absl::StatusOr<float> GetInsertNodeCost(const Node* to_insert);
 
   // Add the external node 'to_insert' into the integration function. Mapped
   // operands are automatically discovered and connected.
-  absl::StatusOr<Node*> InsertNode(const Node* to_insert);
+  absl::StatusOr<Node*> InsertNode(Node* to_insert);
 
   // Estimate the cost of merging node_a and node_b. If nodes cannot be
   // merged, not value is returned.
-  absl::StatusOr<std::optional<float>> 
-    GetMergeNodesCost(const Node* node_a, const Node* node_b);
+  absl::StatusOr<std::optional<float>> GetMergeNodesCost(const Node* node_a,
+                                                         const Node* node_b);
 
-  // Merge node_a and node_b. Returns the nodes that node_a and node_b
+  // Merge node_a and node_b. Opearnds are automatically multiplexed.
+  // Returns the nodes that node_a and node_b
   // map to after merging (vector contains a single node if they map
   // to the same node).
-  absl::StatusOr<std::vector<Node*>> 
-    MergeNodes(Node* node_a, Node* node_b);
+  absl::StatusOr<std::vector<Node*>> MergeNodes(Node* node_a, Node* node_b);
 
   // For the integration function nodes node_a and node_b,
   // returns a single integration function node that combines the two
@@ -65,6 +85,20 @@ class IntegrationFunction {
   // set to true if this call added a new mux.  Otherwise, false.
   absl::StatusOr<Node*> UnifyIntegrationNodes(Node* node_a, Node* node_b,
                                               bool* new_mux_added = nullptr);
+
+  // Return the case indexes which are in active use for a mux
+  // whose selector is global_mux_select_param_;
+  absl::StatusOr<const std::set<int64>*> GetGlobalMuxOccupiedCaseIndexes(
+      const Node* node) const;
+
+  // Return the case index which were most recently added to a mux
+  // whose selector is global_mux_select_param_;
+  absl::StatusOr<const std::set<int64>*> GetGlobalMuxLastCaseIndexesAdded(
+      const Node* node) const;
+
+  // Returns how many muxes whose selector is global_mux_select_param_
+  // we track. This is mostly for testing.
+  absl::StatusOr<int64> GetNumberOfGlobalMuxesTracked() const;
 
   // Return a vector nodes where each node unifies the corresponding
   // operands of 'node_a' and 'node_b'.
@@ -75,7 +109,7 @@ class IntegrationFunction {
   // For a mux produced by UnifyIntegrationNodes, remove the mux and
   // the select paramter (if it has no other users).  Also updates
   // internal unification / mux book-keeping.
-  absl::Status DeUnifyIntegrationNodes(Node* mux);
+  absl::StatusOr<Node*> DeUnifyIntegrationNodes(Node* node);
 
   // Declares that node 'source' from a source function maps
   // to node 'map_target' in the integrated_function.
@@ -88,6 +122,13 @@ class IntegrationFunction {
   // Returns the original nodes that map to 'map_target' in the integrated
   // function.
   absl::StatusOr<const absl::flat_hash_set<const Node*>*> GetNodesMappedToNode(
+      const Node* map_target) const;
+
+  // Returns the source function index for the given node.
+  absl::StatusOr<int64> GetSourceFunctionIndexOfNode(const Node* node) const;
+
+  // Returns the source function index of all nodes that map to 'map_target'.
+  absl::StatusOr<std::set<int64>> GetSourceFunctionIndexesOfNodesMappedToNode(
       const Node* map_target) const;
 
   // Returns a vector of Nodes to which the operands of the node
@@ -113,11 +154,54 @@ class IntegrationFunction {
   float GetNodeCost(const Node* node) const;
 
  private:
+  IntegrationFunction(const IntegrationOptions& options)
+      : integration_options_(options) {}
+
   // Helper function that implements the logic for merging nodes,
   // allowing either for the merge to be performed or the cost
   // of the merge to be estimated.
-  absl::StatusOr<bool> 
-    MergeNodesBackend(const Node* node_a, const Node* node_b, std::vector<Node*>* added_muxes, absl::flat_hash_set<Node*>* other_added_nodes, Node** target_a, Node** target_b);
+  absl::StatusOr<bool> MergeNodesBackend(
+      const Node* node_a, const Node* node_b, std::vector<Node*>* added_muxes,
+      absl::flat_hash_set<Node*>* other_added_nodes, Node** target_a,
+      Node** target_b);
+
+  // For the integration function nodes node_a and node_b,
+  // returns a single integration function node that combines the two
+  // nodes. If a node combining node_a and node_b does not already
+  // exist, a new mux and a per-mux select paramter are added.
+  // If provided, the bool pointed to  by 'new_mux_added' will be be
+  // set to true if this call added a new mux.  Otherwise, false.
+  absl::StatusOr<Node*> UnifyIntegrationNodesWithPerMuxSelect(
+      Node* node_a, Node* node_b, bool* new_mux_added);
+
+  // For the integration function nodes node_a and node_b,
+  // returns a single integration function node that combines the two
+  // nodes. If neither node_a or node_b is a mux added by a previous call,
+  // a new mux is added whose select signal global_mux_select_param_.
+  // If one of the nodes is such a mux, the other node is added as an
+  // input to the mux.
+  // If provided, the bool pointed to  by 'new_mux_added' will be be
+  // set to true if this call added a new mux.  Otherwise, false.
+  absl::StatusOr<Node*> UnifyIntegrationNodesWithGlobalMuxSelect(
+      Node* node_a, Node* node_b, bool* new_mux_added = nullptr);
+
+  // For a mux produced by UnifyIntegrationNodesWithPerMuxSelect, remove the mux
+  // and the select paramter (if it has no other users). Also updates internal
+  // unification / mux book-keeping.
+  absl::Status DeUnifyIntegrationNodesWithPerMuxSelect(Node* node);
+
+  // For a mux produced by UnifyIntegrationNodesWithGlobalMuxSelect,
+  // remove the most recently added cases. If no cases are in use after this,
+  // then the mux is removed. Otherwise, the revert mux is returned. Also
+  // updates internal unification / mux book-keeping.
+  absl::StatusOr<Node*> DeUnifyIntegrationNodesWithGlobalMuxSelect(Node* node);
+
+  // Replaces 'mux' with a new mux which is identical except that
+  // the the cases at the indexes in 'source_index_to_case'
+  // are replaced with the nodes specified.
+  absl::StatusOr<Node*> ReplaceMuxCases(
+      Node* mux_node,
+      const absl::flat_hash_map<int64, Node*>& source_index_to_case);
 
   // Track mapping of original function nodes to integrated function nodes.
   absl::flat_hash_map<const Node*, Node*> original_node_to_integrated_node_map_;
@@ -128,8 +212,31 @@ class IntegrationFunction {
   absl::flat_hash_map<std::pair<const Node*, const Node*>, Node*>
       node_pair_to_mux_;
 
+  // If integration_options_ does not specify that each mux has a unique
+  // select signal, this shared parameter is the select for all integration
+  // muxes.
+  Node* global_mux_select_param_ = nullptr;
+
+  // Track which select arms map meaningful nodes for muxes
+  // using the global_mux_select_param_ select signal.
+  absl::flat_hash_map<Node*, std::set<int64>> global_mux_occupied_case_indexes_;
+
+  // Track which select arms were most recently added for muxes
+  // using the global_mux_select_param_ select signal. Note that
+  // we only need to preserve enough history to call DeUnifyIntegrationNodes
+  // after calling UnifyIntegrationNodes, with no other calls to
+  // UnifyIntegrationNodes for a given mux inbetween. Further, there should not
+  // be more than one call to DeUnifyIntegrationNodes for a given node.
+  absl::flat_hash_map<Node*, std::set<int64>>
+      global_mux_last_cases_indexes_added_;
+
+  // Maps each source function to a unique index.
+  absl::flat_hash_map<const FunctionBase*, int64>
+      source_function_base_to_index_;
+
   // Integrated function.
   std::unique_ptr<Function> function_;
+  const IntegrationOptions integration_options_;
   Package* package_;
 };
 
@@ -146,13 +253,18 @@ class IntegrationBuilder {
   // Creates an IntegrationBuilder and uses it to produce an integrated function
   // implementing all functions in source_functions_.
   static absl::StatusOr<std::unique_ptr<IntegrationBuilder>> Build(
-      absl::Span<const Function* const> input_functions);
+      absl::Span<const Function* const> input_functions,
+      const IntegrationOptions& options = IntegrationOptions());
 
   Package* package() { return package_.get(); }
   Function* integrated_function() { return integrated_function_; }
+  const IntegrationOptions* integration_options() {
+    return &integration_options_;
+  }
 
  private:
-  IntegrationBuilder(absl::Span<const Function* const> input_functions) {
+  IntegrationBuilder(absl::Span<const Function* const> input_functions,
+                     const IntegrationOptions& options) {
     original_package_source_functions_.insert(
         original_package_source_functions_.end(), input_functions.begin(),
         input_functions.end());
@@ -160,7 +272,6 @@ class IntegrationBuilder {
     package_ = absl::make_unique<Package>("IntegrationPackage");
   }
 
- private:
   // Copy the source functions into a common package.
   absl::Status CopySourcesToIntegrationPackage();
 
@@ -170,6 +281,8 @@ class IntegrationBuilder {
       absl::flat_hash_map<const Function*, Function*>* call_remapping);
 
   NameUniquer function_name_uniquer_ = NameUniquer(/*separator=*/"__");
+
+  const IntegrationOptions integration_options_;
 
   // Common package for to-be integrated functions
   // and integrated function.
