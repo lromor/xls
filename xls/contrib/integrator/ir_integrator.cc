@@ -78,6 +78,28 @@ IntegrationFunction::MakeIntegrationFunctionWithParamTuples(
   return std::move(integration_function);
 }
 
+absl::StatusOr<Node*> IntegrationFunction::MakeTupleReturnValue() {
+  std::vector<Nodes*> elements(source_function_base_to_index_.size());
+  for(auto function_index : source_function_base_to_index_) {
+    // Grab source return value.
+    FunctionBase source_function = function_index.first; 
+    Node* source_return = source_function->return_value();
+
+    // Add to tuple.
+    XLS_RET_CHECK(HasMapping(source_return));
+    XLS_ASSIGN_OR_RETURN(elements[function_index.second], GetNodeMapping(source_return));
+  }
+
+  // Make tuple, set as return.
+  Tuple(absl::optional<SourceLocation> loc, absl::Span<Node *const> elements,
+        absl::string_view name, FunctionBase *function);
+  XLS_ASSIGN_OR_RETURN(Node * return_tuple, function_->MakeNode<Tuple>(
+                                          /*loc=*/std::nullopt, elements));
+  XLS_RETURN_IF_ERROR(function_->set_eturn_value(return_tuple));
+
+  return return_tuple;
+}
+
 absl::Status IntegrationFunction::SetNodeMapping(const Node* source,
                                                  Node* map_target) {
   // Validate map pairing.

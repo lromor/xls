@@ -78,6 +78,13 @@ class IntegrationFunction {
   // to the same node).
   absl::StatusOr<std::vector<Node*>> MergeNodes(Node* node_a, Node* node_b);
 
+  // Create a tuple where each tuple entry corresponds to a return
+  // value of one of the source functions. This tuple is set as
+  // the return value of the integrated function and returned.
+  // All source function return values should have mapping before
+  // this function is called.
+  absl::StatusOr<Node*> MakeTupleReturnValue();
+
   // For the integration function nodes node_a and node_b,
   // returns a single integration function node that combines the two
   // nodes. This may involve adding a mux and parameter select signal.
