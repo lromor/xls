@@ -10,3 +10,7 @@ user.bazelrc
 .cache
 docs/
 .jj/
+
+# Nix build outputs
+result
+result-*
