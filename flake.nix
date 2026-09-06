@@ -48,8 +48,8 @@
       # The prebuilt binaries: output of nix/release.sh, attached to the GitHub
       # release `nix-<version>` on lromor/xls.
       release = {
-        version = "v0.0.0-10627-gc42eadd12";
-        hash = "sha256-cootrMpAdBT6Wc+vJ+Ci++AMr2vW5hPfLWMkFlvxhbM=";
+        version = "v0.0.0-10631-g18a426591";
+        hash = "sha256-r2fow+mMhdmJsFjRMPu0NcwtjZ6UVrMo8nOkUIDHfhk=";
       };
 
       mkXls =
