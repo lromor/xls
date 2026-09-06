@@ -981,11 +981,27 @@ class Visitor : public AstNodeVisitorWithDefault {
 
     std::vector<InterpValue> parametrics;
     parametrics.reserve(type.struct_def_base().parametric_bindings().size());
+    const ParametricEnv env = table_.GetParametricEnv(parametric_context_);
     for (const ParametricBinding* binding :
          type.struct_def_base().parametric_bindings()) {
-      XLS_ASSIGN_OR_RETURN(InterpValue value,
-                           ti_->GetConstExpr(binding->name_def()));
-      parametrics.push_back(value);
+      // Value parametrics (and defaulted type parametrics) have a constexpr
+      // noted on the binding. An explicitly supplied `T: type` parametric does
+      // not, so fall back to the parametric env, then to an opaque type
+      // reference. Positions must be preserved: proc initializers are compared
+      // element-wise by index.
+      std::optional<InterpValue> value =
+          ti_->GetConstExprOption(binding->name_def());
+      if (!value.has_value()) {
+        value = env.GetValue(binding->name_def());
+      }
+      if (!value.has_value() &&
+          binding->type_annotation()->IsAnnotation<GenericTypeAnnotation>()) {
+        value = InterpValue::MakeTypeReference(binding->type_annotation());
+      }
+      if (!value.has_value()) {
+        XLS_ASSIGN_OR_RETURN(value, ti_->GetConstExpr(binding->name_def()));
+      }
+      parametrics.push_back(*value);
     }
 
     auto inst = InterpValue::MakeProcInitializer(

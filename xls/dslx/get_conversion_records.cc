@@ -176,7 +176,7 @@ class ConversionRecordVisitor : public AstNodeRecursiveVisitor {
   // dealt with in `HandleInvocation`.
   absl::Status HandleFunction(const Function* f) override {
     VLOG(5) << "HandleFunction " << f->ToString();
-    if (f->IsParametric() || f->IsInProc() || f->IsMethodOnParametricStruct()) {
+    if (f->IsParametricOrOnParametricStruct() || f->IsInProc()) {
       // TODO: https://github.com/google/xls/issues/1029 - remove module-level
       // proc functions.
       VLOG(5) << "Skipping function " << f->identifier()
@@ -212,7 +212,7 @@ class ConversionRecordVisitor : public AstNodeRecursiveVisitor {
                                       bool handle_for_invocation) {
     XLS_RET_CHECK(module_ == f->owner());
     XLS_RET_CHECK(!f->IsInProc());
-    if (f->IsParametric() || f->IsMethodOnParametricStruct()) {
+    if (f->IsParametricOrOnParametricStruct()) {
       XLS_RET_CHECK(!env.empty());
       XLS_RET_CHECK_NE(type_info_->GetRoot(), type_info_);
     } else {
@@ -419,6 +419,12 @@ class ConversionRecordVisitor : public AstNodeRecursiveVisitor {
           << " with constructor TI "
           << canonical_initializer.constructor_type_info->name()
           << " and next() TI " << canonical_initializer.next_type_info->name();
+
+      ConversionRecordVisitor next_fn_visitor(
+          (*next_fn)->owner(), canonical_initializer.next_type_info,
+          include_tests_, proc_id_factory_, top_, resolved_proc_alias_,
+          records_, processed_invocations_);
+      XLS_RETURN_IF_ERROR((*next_fn)->body()->Accept(&next_fn_visitor));
 
       XLS_ASSIGN_OR_RETURN(
           ConversionRecord cr,
