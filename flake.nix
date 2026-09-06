@@ -1,33 +1,37 @@
 {
-  # Nix flake for XLS: a development shell and a pre-built `xls` package.
+  # Nix flake for XLS: a development shell and a package of prebuilt tools.
   #
-  # Development shell (bazel and the host tools the build reaches for):
+  # Development shell (bazel plus the host tools the build reaches for):
   #
   #   nix develop            # or `direnv allow`
   #   bazel build //xls/dslx/ir_convert:ir_converter_main
   #
-  # Consuming the pre-built tools from another flake:
+  # Using the prebuilt tools from another flake:
   #
   #   inputs.xls.url = "github:lromor/xls/nix";
   #   ...
   #   inputs.xls.packages.${system}.default    # or overlays.default -> pkgs.xls
   #
-  # and make the binary cache known to the consuming side, either in its own
-  # flake's nixConfig or in nix.conf:
+  # The package downloads a tarball attached to a GitHub release on this
+  # fork, so consumers need nothing else configured. Layout of the result:
   #
-  #   extra-substituters = https://fpga-assembler.cachix.org
-  #   extra-trusted-public-keys = fpga-assembler.cachix.org-1:yp4kNzY1Hru9BlaoE025RuBaL/sX6Ou2abo5L8SHk0I=
+  #   bin/xls-ir-converter, bin/xls-interpreter, bin/xls-opt, bin/xls-codegen,
+  #   bin/xls-parse-and-typecheck-dslx, bin/xls-prove-quickcheck,
+  #   bin/xls-proto-to-dslx, bin/xls-eval-ir, bin/dslx-fmt, bin/dslx-ls
+  #   libexec/xls/<bazel names>      the real binaries
+  #   lib/xls/dslx/stdlib            the DSLX standard library
   #
-  # Building the package yourself: Bazel needs the network during the build
-  # (bzlmod registry, git_override() clones) and the prebuilt Python it
-  # downloads needs the host's nix-ld loader. Neither is available inside the
-  # nix sandbox, so the derivation opts out of it with __noChroot. Build it as
-  # a trusted user on a NixOS host with programs.nix-ld enabled:
+  # The tools find the stdlib on their own; --dslx_stdlib_path is optional.
   #
-  #   nix build --option sandbox relaxed .#xls
-  #   cachix push fpga-assembler ./result
+  # Publishing new binaries is manual (no CI), from a checkout of this branch:
   #
-  # Consumers never build it, they fetch it from the cache.
+  #   nix develop
+  #   bazel build -c opt $(nix/release.sh --targets)
+  #   nix/release.sh                        # tarball + version + hash
+  #   gh release create nix-<version> xls-<version>-linux-x64.tar.gz \
+  #     --repo lromor/xls --target <commit>
+  #
+  # then update `release` below, commit and push.
   # This is not officially supported by the XLS team.
   description = "XLS: Accelerated HW Synthesis";
 
@@ -35,134 +39,66 @@
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
   };
 
-  nixConfig = {
-    extra-substituters = [
-      "https://fpga-assembler.cachix.org"
-    ];
-    extra-trusted-public-keys = [
-      "fpga-assembler.cachix.org-1:yp4kNzY1Hru9BlaoE025RuBaL/sX6Ou2abo5L8SHk0I="
-    ];
-  };
-
   outputs =
     { self, nixpkgs }:
     let
-      systems = [
-        "x86_64-linux"
-        "aarch64-linux"
-      ];
+      systems = [ "x86_64-linux" ];
       forAllSystems = f: nixpkgs.lib.genAttrs systems (system: f nixpkgs.legacyPackages.${system});
 
-      # Bazel targets that make up the package.
-      bazelTargets = [
-        "//xls/dslx/ir_convert:ir_converter_main"
-        "//xls/dslx:interpreter_main"
-        "//xls/dslx:dslx_fmt"
-        "//xls/dslx/lsp:dslx_ls"
-        "//xls/tools:opt_main"
-        "//xls/tools:codegen_main"
-        "//xls/tools:eval_ir_main"
-      ];
-
-      # Short names, matching the XLS_* tool variables in our Makefiles.
-      aliases = {
-        xls-ir-converter = "ir_converter_main";
-        xls-interpreter = "interpreter_main";
-        xls-opt = "opt_main";
-        xls-codegen = "codegen_main";
+      # The prebuilt binaries: output of nix/release.sh, attached to the GitHub
+      # release `nix-<version>` on lromor/xls.
+      release = {
+        version = "v0.0.0-10627-gc42eadd12";
+        hash = "sha256-cootrMpAdBT6Wc+vJ+Ci++AMr2vW5hPfLWMkFlvxhbM=";
       };
 
       mkXls =
         pkgs:
-        let
-          inherit (pkgs) lib;
-          # "//xls/tools:opt_main" -> "xls/tools/opt_main" (path under bazel-bin).
-          targetPath = t: builtins.replaceStrings [ "//" ":" ] [ "" "/" ] t;
-        in
         pkgs.stdenv.mkDerivation {
           pname = "xls";
-          version = "0-unstable-2026-09-06";
-          src = self;
+          inherit (release) version;
 
-          # See the header comment: network + nix-ld are needed at build time.
-          __noChroot = true;
-          preferLocalBuild = true;
-
-          # stdenv also puts gcc/g++/ar on PATH, which Z3's mk_make.py source
-          # generator probes for before it emits anything. The C++ compilation
-          # itself uses the hermetic LLVM toolchain that bzlmod downloads.
-          nativeBuildInputs = with pkgs; [
-            bazel_8
-            jdk
-            git
-            cacert
-            python3
-            autoPatchelfHook
-          ];
-
-          env = {
-            SSL_CERT_FILE = "${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt";
-            GIT_SSL_CAINFO = "${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt";
-            BAZEL_SH = "${pkgs.bash}/bin/bash";
-            # For the prebuilt binaries bazel downloads (python, pip wheels).
-            NIX_LD = "${pkgs.stdenv.cc.bintools.dynamicLinker}";
-            NIX_LD_LIBRARY_PATH = lib.makeLibraryPath [
-              pkgs.stdenv.cc.cc.lib
-              pkgs.zlib
-            ];
+          src = pkgs.fetchurl {
+            url = "https://github.com/lromor/xls/releases/download/nix-${release.version}/xls-${release.version}-linux-x64.tar.gz";
+            inherit (release) hash;
           };
 
+          nativeBuildInputs = [ pkgs.autoPatchelfHook ];
+
           dontConfigure = true;
-
-          buildPhase = ''
-            runHook preBuild
-            export HOME="$TMPDIR/home"
-            mkdir -p "$HOME"
-            bazel --output_user_root="$TMPDIR/bazel" build \
-              -c opt \
-              --spawn_strategy=local \
-              --curses=no --color=no --show_progress_rate_limit=60 \
-              --jobs="$NIX_BUILD_CORES" \
-              --verbose_failures \
-              ${lib.escapeShellArgs bazelTargets}
-            runHook postBuild
-          '';
-
-          postBuild = ''
-            bazel --output_user_root="$TMPDIR/bazel" shutdown || true
-          '';
+          dontBuild = true;
 
           installPhase = ''
             runHook preInstall
-            mkdir -p "$out/bin" "$out/libexec/xls"
-            for t in ${lib.escapeShellArgs (map targetPath bazelTargets)}; do
-              name="$(basename "$t")"
-              install -Dm755 "bazel-bin/$t" "$out/libexec/xls/$name"
-              # The runfiles tree (DSLX stdlib) must sit next to the binary; the
-              # tools locate it through the real path of their executable.
-              if [ -d "bazel-bin/$t.runfiles" ]; then
-                cp -rL "bazel-bin/$t.runfiles" "$out/libexec/xls/$name.runfiles"
-                rm -f "$out/libexec/xls/$name.runfiles/MANIFEST"
-                self_copy="$out/libexec/xls/$name.runfiles/_main/$t"
-                if [ -e "$self_copy" ]; then
-                  rm -f "$self_copy"
-                  ln -s "$(realpath --relative-to="$(dirname "$self_copy")" "$out/libexec/xls/$name")" "$self_copy"
-                fi
-              fi
-              ln -s "../libexec/xls/$name" "$out/bin/$name"
+            mkdir -p "$out/bin" "$out/libexec/xls" "$out/lib/xls/dslx"
+            cp -r xls/dslx/stdlib "$out/lib/xls/dslx/"
+
+            for f in *_main dslx_fmt dslx_ls; do
+              install -m755 "$f" "$out/libexec/xls/$f"
+
+              # A runfiles tree next to each binary lets the tools locate the
+              # DSLX stdlib without flags, the same way they do under bazel.
+              runfiles="$out/libexec/xls/$f.runfiles"
+              mkdir -p "$runfiles/_main/xls/dslx"
+              ln -s "$out/lib/xls/dslx/stdlib" "$runfiles/_main/xls/dslx/stdlib"
+              printf ',com_google_xls,_main\n' > "$runfiles/_repo_mapping"
+
+              # Friendlier names in bin: xls- prefix, no _main suffix, dashes.
+              case "$f" in
+                *_main) nice="xls-$(echo "''${f%_main}" | tr _ -)" ;;
+                *) nice="$(echo "$f" | tr _ -)" ;;
+              esac
+              ln -s "../libexec/xls/$f" "$out/bin/$nice"
             done
-            ${lib.concatStringsSep "\n" (
-              lib.mapAttrsToList (alias: target: ''ln -s "${target}" "$out/bin/${alias}"'') aliases
-            )}
             runHook postInstall
           '';
 
-          meta = with lib; {
+          meta = with pkgs.lib; {
             description = "XLS: Accelerated HW Synthesis (DSLX front end, IR optimizer, codegen)";
             homepage = "https://github.com/google/xls";
             license = licenses.asl20;
             platforms = [ "x86_64-linux" ];
-            mainProgram = "interpreter_main";
+            mainProgram = "xls-interpreter";
           };
         };
     in
@@ -177,8 +113,9 @@
       };
 
       devShells = forAllSystems (pkgs: {
-        # mkShell puts stdenv's gcc/g++/ar on PATH; keep it that way, Z3's
-        # mk_make.py needs them (see mkXls above).
+        # mkShell puts stdenv's gcc/g++/ar on PATH; keep it that way. The C++
+        # compilation uses the hermetic LLVM toolchain bzlmod downloads, but
+        # Z3's mk_make.py source generator probes PATH for a C++ compiler.
         default = pkgs.mkShell {
           packages = with pkgs; [
             bazel_8 # 8.7.0, see .bazelversion
@@ -193,6 +130,7 @@
             # Development support.
             bazel-buildtools # buildifier, buildozer
             clang-tools # clang-format, clang-tidy
+            gh # publishing releases, see nix/release.sh
           ];
 
           CLANG_TIDY = "${pkgs.clang-tools}/bin/clang-tidy";

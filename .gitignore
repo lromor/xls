@@ -14,3 +14,4 @@ docs/
 # Nix build outputs
 result
 result-*
+xls-*-linux-x64.tar.gz
