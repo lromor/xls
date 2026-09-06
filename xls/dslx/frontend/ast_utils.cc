@@ -121,7 +121,7 @@ bool IsParametricFunction(const AstNode* n) {
   }
 
   const auto* f = dynamic_cast<const Function*>(n);
-  return f != nullptr && f->IsParametric();
+  return f != nullptr && f->IsParametricOrOnParametricStruct();
 }
 
 bool IsNameRefToParametricFunction(const AstNode* n) {

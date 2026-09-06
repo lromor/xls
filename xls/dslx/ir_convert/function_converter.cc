@@ -860,6 +860,11 @@ absl::Status FunctionConverter::HandleAllOnesMacro(const AllOnesMacro* node) {
 
 absl::Status FunctionConverter::HandleParam(const Param* node) {
   VLOG(5) << "FunctionConverter::HandleParam: " << node->ToString();
+  XLS_ASSIGN_OR_RETURN(Type * dslx_type,
+                       current_type_info_->GetItemOrError(node));
+  if (dslx_type->IsProc()) {
+    return absl::OkStatus();
+  }
   XLS_ASSIGN_OR_RETURN(xls::Type * type,
                        ResolveTypeToIr(node->type_annotation()));
   Def(node->name_def(), [&](const SourceInfo& loc) {
@@ -3637,7 +3642,7 @@ absl::Status FunctionConverter::HandleFunction(
   // outside world, since they're driven and named by DSL instantiation, so we
   // forgo exposing them here.
   if (requires_implicit_token && (node->is_public() || is_top_) &&
-      !node->IsParametric() && !node->IsMethodOnParametricStruct()) {
+      !node->IsParametricOrOnParametricStruct()) {
     XLS_ASSIGN_OR_RETURN(
         xls::Function * wrapper,
         EmitImplicitTokenEntryWrapper(ir_fn, node, is_top_,
@@ -3785,6 +3790,7 @@ absl::Status FunctionConverter::HandleChannelDecl(const ChannelDecl* node) {
 
 absl::Status FunctionConverter::InitProcDefBuilder(const ProcDef* proc_def,
                                                    const ParametricEnv& env) {
+  SetParametricEnv(&env);
   absl::btree_set<std::string> parametric_keys;
 
   // Include parametric values in the mangled names of non-top procs only.
@@ -3818,8 +3824,39 @@ absl::Status FunctionConverter::InitProcDefBuilder(const ProcDef* proc_def,
   };
   tokens_.push_back(implicit_token);
 
-  // TODO: https://github.com/google/xls/issues/4125 - Deal with the parametric
-  // bindings here, using `HandleProcNextFunction` as a rough guide.
+  for (ParametricBinding* parametric_binding : proc_def->parametric_bindings()) {
+    if (parametric_binding->type_annotation()
+            ->IsAnnotation<GenericTypeAnnotation>()) {
+      continue;
+    }
+
+    VLOG(5) << "Resolving parametric binding: "
+            << parametric_binding->ToString();
+
+    std::optional<InterpValue> parametric_value =
+        GetParametricBinding(parametric_binding->identifier());
+    XLS_RET_CHECK(parametric_value.has_value());
+    XLS_ASSIGN_OR_RETURN(std::unique_ptr<Type> parametric_type,
+                         ResolveType(parametric_binding->name_def()));
+    XLS_RET_CHECK(!parametric_type->IsMeta());
+
+    XLS_ASSIGN_OR_RETURN(TypeDim parametric_width_ctd,
+                         parametric_type->GetTotalBitCount());
+    XLS_ASSIGN_OR_RETURN(int64_t bit_count, parametric_width_ctd.GetAsInt64());
+    Value param_value;
+    if (parametric_value->IsSigned()) {
+      XLS_ASSIGN_OR_RETURN(int64_t bit_value,
+                           parametric_value->GetBitValueViaSign());
+      param_value = Value(SBits(bit_value, bit_count));
+    } else {
+      XLS_ASSIGN_OR_RETURN(uint64_t bit_value,
+                           parametric_value->GetBitValueViaSign());
+      param_value = Value(UBits(bit_value, bit_count));
+    }
+    DefConst(parametric_binding, param_value);
+    XLS_RETURN_IF_ERROR(
+        DefAlias(parametric_binding, /*to=*/parametric_binding->name_def()));
+  }
 
   VLOG(3) << "Proc has " << constant_deps_.size() << " constant deps";
   for (ConstantDef* dep : constant_deps_) {
@@ -4753,7 +4790,7 @@ absl::StatusOr<std::string> FunctionConverter::GetCalleeIdentifier(
   absl::btree_set<std::string> free_keys = f->GetFreeParametricKeySet();
   const CallingConvention convention = GetCallingConvention(f);
   Module* m = f->owner();
-  if (!f->IsParametric() && !f->IsMethodOnParametricStruct()) {
+  if (!f->IsParametricOrOnParametricStruct()) {
     return MangleDslxName(m->name(), f->identifier(), convention, free_keys,
                           /*parametric_env=*/nullptr, scope);
   }

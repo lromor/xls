@@ -222,7 +222,7 @@ class InvocationVisitor : public ExprVisitor {
         return absl::OkStatus();
       }
 
-      bool is_parametric = callee->IsParametric();
+      bool is_parametric = callee->IsParametricOrOnParametricStruct();
       // Temporarily store null type_info for parametric functions. Parametric
       // bindings will be resolved below and used to look up the invocation type
       // info.
@@ -521,9 +521,11 @@ static void RemoveFunctionDuplicates(std::vector<ConversionRecord>* ready) {
           subject_cr.f()->tag() == FunctionTag::kProcConfig ||
           subject_cr.f()->tag() == FunctionTag::kProcNext;
       bool either_is_parametric =
-          function_cr.f()->IsParametric() || subject_cr.f()->IsParametric();
+          function_cr.f()->IsParametricOrOnParametricStruct() ||
+          subject_cr.f()->IsParametricOrOnParametricStruct();
       bool both_are_parametric =
-          function_cr.f()->IsParametric() && subject_cr.f()->IsParametric();
+          function_cr.f()->IsParametricOrOnParametricStruct() &&
+          subject_cr.f()->IsParametricOrOnParametricStruct();
 
       if (same_fns && !either_is_proc_instance_fn) {
         // If neither are parametric, then function identity comparison is
@@ -720,7 +722,7 @@ absl::StatusOr<std::vector<ConversionRecord>> GetOrder(Module* module,
     // NOTE: Proc creation is driven by Spawn instantiations - the
     // required constant args are only specified there, so we can't
     // convert Procs as encountered at top level.
-    if (f->IsParametric() || f->proc().has_value()) {
+    if (f->IsParametricOrOnParametricStruct() || f->proc().has_value()) {
       return absl::OkStatus();
     }
 

@@ -2606,6 +2606,13 @@ class Function : public AstNode {
   // struct.
   bool IsFunctionOnParametricStruct() const;
 
+  // Returns true if this function is parametric itself (has function-level
+  // parametric bindings) or is defined inside an `impl` block of a parametric
+  // struct.
+  bool IsParametricOrOnParametricStruct() const {
+    return IsParametric() || IsFunctionOnParametricStruct();
+  }
+
   bool IsStub() const { return is_stub_; }
   bool IsCompilerDerived() const { return is_compiler_derived_; }
 
